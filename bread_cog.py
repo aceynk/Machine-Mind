@@ -1,10 +1,10 @@
-
-# test commit please ignore
-
 """
 Patch Notes: 
 - Fixed bug where getting a multiple of 55 chessatrons would ping you for no reason
 - Added alchemy recipe to turn a gold gem into a green gem
+- You can now use `$bread chessatron <number>` to make a specific number of chessatrons. Also works with `gem_chessatron`. Thanks to Aloe for this patch
+- Gambling now has less of a chance of failing internally. Thanks to Malte for this patch.
+- Added `$bread help`, finally. Thanks to Duck for this patch.
 
 TODO:
 
@@ -550,12 +550,18 @@ class Bread_cog(commands.Cog, name="Bread"):
                 await ctx.send("That is not a recognized command. Use `$help bread` for some things you could call. If you wish to roll, use `$bread` on its own.")
 
         pass
+    
+    @bread.command(
+        hidden=True,
+    )
+    async def help(self, ctx):
+        await ctx.send_help(Bread_cog.bread)
 
     ########################################################################################################################
     #####      BREAD WIKI
 
     @bread.command(
-        brief="Links to the wiki"
+        brief="Links to the wiki."
     )
     async def wiki(self, ctx):
         await ctx.send("The bread wiki is a repository of all information so far collected about the bread game. It can be found here:\nhttps://the-bread-game.fandom.com/wiki/The_Bread_Game_Wiki")
@@ -906,7 +912,7 @@ class Bread_cog(commands.Cog, name="Bread"):
     ######## BREAD LEADERBOARD
 
     @bread.command(
-        brief="Shows the top earners",
+        brief="Shows the top earners.",
         help = 
 """Used to see the rankings for any stat or emoji that is tracked. 
 
@@ -1155,7 +1161,7 @@ loaf_converter""",
     # the following code will total up the value of a given emote across all users
     @bread.command(
         hidden = True,
-        brief= "Totals up a stat",
+        brief= "Totals up a stat.",
     )
     @commands.is_owner() # depreciated
     async def total(self, ctx, value: typing.Optional[str]):
@@ -1182,7 +1188,7 @@ loaf_converter""",
 
     @bread.command(
         hidden = False,
-        brief= "Toggles the black hole",
+        brief= "Toggles the black hole.",
         aliases = ["blackhole"]
     )
     async def black_hole(self, ctx, state: typing.Optional[str]):
@@ -1219,7 +1225,7 @@ loaf_converter""",
 
     @bread.command(
         hidden= False,
-        brief="A tasty bread roll",
+        brief="A tasty bread roll.",
     )
     async def roll(self, ctx):
 
@@ -1480,7 +1486,7 @@ loaf_converter""",
     ########################################################################################################################
     #####      do CHESSBOARD COMPLETION
 
-    async def do_chessboard_completion(self, ctx, force = False):
+    async def do_chessboard_completion(self, ctx, force: bool = False, amount = None):
 
         user_account = self.json_interface.get_account(ctx.author)
 
@@ -1497,7 +1503,15 @@ loaf_converter""",
         summary = False
         summary_count = 0
 
-        while len(leftover_pieces) == 0:
+        # pointwise integer division between the full chess set and the set of the user's pieces.
+        valid_trons = min([user_account.get(x.name) // full_chess_set.count(x) for x in user_chess_pieces])
+
+        # iteration ends at the minimum value, make sure amount is never the minimum. 'amount is None' should mean no max ...
+        # ... has been specified, so make as many trons as possible.
+        if amount is None: amount = valid_trons + 1
+
+        # stop iteration when you can't make any more trons, or have hit the limit of specified trons; whichever comes first.
+        for _ in range(min(valid_trons, amount)):
 
             board = Bread_cog.format_chess_pieces(user_account.values)
 
@@ -1514,8 +1528,6 @@ loaf_converter""",
             omega_count = user_account.get(values.omega_chessatron.text)
             chessatron_value += omega_count * 250
 
-
-            
             # finally add the dough and chessatron
             chessatron_result_value = user_account.add_dough_intelligent(chessatron_value)
             user_account.add_item_attributes(values.chessatron)
@@ -1583,27 +1595,28 @@ loaf_converter""",
         brief="Toggle auto chessatron on or off."
 
     )
-    async def chessatron(self, ctx, toggle: typing.Optional[str] = None):
+    async def chessatron(self, ctx, arg: typing.Optional[str] = None) -> None:
         """Toggle auto chessatron on or off."""
-
-        
         
         user_account = self.json_interface.get_account(ctx.author)
 
-        if toggle is None:
-            toggle = ""
+        if arg is None:
+            arg = ""
         
-        if toggle.lower() == "on":
+        if arg.lower() == "on":
             user_account.set("auto_chessatron", True)
             await utility.smart_reply(ctx, f"Auto chessatron is now on.")
-        elif toggle.lower() == "off":
+        elif arg.lower() == "off":
             user_account.set("auto_chessatron", False)
             await utility.smart_reply(ctx, f"Auto chessatron is now off.")
         else:
             if channel_permission_levels.get(ctx.channel.name, 0) < PERMISSION_LEVEL_ACTIVITIES:
                 await utility.smart_reply(ctx, f"Thank you for your interest in creating chessatrons! You can do so over in <#967544442468843560>.")
                 return
-            await self.do_chessboard_completion(ctx, True)
+            if arg.isnumeric():
+                await self.do_chessboard_completion(ctx, True, amount = int(arg))
+            else:
+                await self.do_chessboard_completion(ctx, True)
 
         self.json_interface.set_account(ctx.author, user_account)
         
@@ -1614,7 +1627,7 @@ loaf_converter""",
     @bread.command(
         help="Create a chessatron from red gems.",
     )
-    async def gem_chessatron(self, ctx):
+    async def gem_chessatron(self, ctx, arg = None):
 
         user_account = self.json_interface.get_account(ctx.author)
         gem_count = user_account.get(values.gem_red.text)
@@ -1644,7 +1657,12 @@ loaf_converter""",
         self.json_interface.set_account(ctx.author, user_account)
 
         await utility.smart_reply(ctx, f"You have used {32*number_of_chessatrons} red gems to make chessatrons.")
-        await self.do_chessboard_completion(ctx, True)
+
+        if arg.isnumeric():
+            arg = int(arg)
+        else: arg = None
+
+        await self.do_chessboard_completion(ctx, True, amount = int(arg))
 
     ########################################################################################################################
     #####      BREAD SPELLCHECK
@@ -1900,7 +1918,7 @@ loaf_converter""",
         hidden=False,
         aliases=["purchase"],
         help= "Usage: $bread buy [item name]\n\nBuys an item from the bread store. Only works in #bread-rolls.",
-        brief= "Buy an item from the bread shop",
+        brief= "Buy an item from the bread shop.",
     )
     async def buy(self, ctx, *, item_name: typing.Optional[str]):
 
@@ -2093,7 +2111,7 @@ Special stats, such as special_bread, cannot be gifted or transferred.
 """
 
     @bread.command(
-        brief="Gives bread away",
+        brief="Gives bread away.",
         help="Usage: $bread gift [person] [amount] [item]\n"+bread_gift_text,
         aliases=["pay"]
     )
@@ -2329,21 +2347,26 @@ anarchy - 1000% of your wager.
         #make grid
         grid = list()
         grid_size = 4
-        for x in range(0,grid_size):
-            templist = []
-            grid.append(templist)
-            for y in range(0,grid_size):
-                templist.append(None)
+        for x in range(grid_size):
+            grid.append([None] * grid_size)
 
         # grid.append([None, None, None])
         # grid.append([None, None, None])
         # grid.append([None, None, None])
+
         winning_x = random.randint(0,grid_size-1)
         winning_y = random.randint(0,grid_size-1)
         winning_text = result['result'].text
 
         # add winning result to grid
         grid[winning_x][winning_y] = winning_text
+
+        # losing rows/columns that will get deleted
+        rows_to_remove = list(range(grid_size))
+        rows_to_remove.remove(winning_y)
+
+        columns_to_remove = list(range(grid_size))
+        columns_to_remove.remove(winning_x)
 
         # fill grid with other stuff
         for i in range(grid_size):
@@ -2357,42 +2380,26 @@ anarchy - 1000% of your wager.
             message = await utility.smart_reply(ctx, Bread_cog.show_grid(grid))
             await asyncio.sleep(2)
 
-            open_squares = grid_size ** 2
-            while (open_squares > 1):
-                updated = False
-                if random.randint(1,2) == 1: #do row
-                    
-                    #choose a row to remove that's not the winning row
-                    rows_before_winning_y = range(grid_size)[:winning_y]
-                    rows_after_winning_y = range(grid_size)[winning_y+1:]
 
-                    losing_rows = tuple(rows_before_winning_y) + tuple(rows_after_winning_y)
+            #runs as often as rows/columns need to be removed
+            for snips_left in range(grid_size*2 - 2, 0, -1):
 
-                    y = random.choice(losing_rows)
+                # pick a random row/column
+                what_to_snip = random.randint(0, snips_left - 1)
 
-                    for x in range(0,grid_size):
-                        if grid[x][y] is not None:
-                            updated = True # this means we'll have changed something and should show it
+                if what_to_snip < len(rows_to_remove): #do row
+                    y = rows_to_remove.pop(what_to_snip)
+                    for x in range(grid_size):
                         grid[x][y] = None
                     
                 else: #do column
-
-                    #choose a column to remove that's not the winning column
-                    columns_before_winning_x = range(grid_size)[:winning_x]
-                    columns_after_winning_x = range(grid_size)[winning_x+1:]
-
-                    losing_columns = tuple(columns_before_winning_x) + tuple(columns_after_winning_x)
-
-                    x = random.choice(losing_columns)
-
-                    for y in range(0,grid_size):
-                        if grid[x][y] is not None:
-                            updated = True # this means we'll have changed something and should show it
+                    x = columns_to_remove.pop(what_to_snip - len(rows_to_remove))
+                    for y in range(grid_size):
                         grid[x][y] = None
                 
-                if updated:
-                    await message.edit(content= Bread_cog.show_grid(grid))
-                    await asyncio.sleep(1.5)
+                await message.edit(content= Bread_cog.show_grid(grid))
+                await asyncio.sleep(1.5)
+
                 
         except: 
             pass
